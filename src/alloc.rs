@@ -142,7 +142,7 @@ struct Header {
     size_or_class_of_subheap: usize,
 }
 
-const MAX_HEAP_SIZE: usize = 2 << 32;
+const MAX_HEAP_SIZE: usize = 2 << 40;
 const SUBHEAP_COUNT: usize = 7;
 
 const fn block_size_of_subheap(class_of_subheap: usize) -> usize {
@@ -199,6 +199,19 @@ impl Allocator {
         self.alloc_by_size(size_of::<T>())
     }
 
+    pub unsafe fn alloc_by_size<T>(&mut self, len: usize) -> Result<NonNull<T>, Box<dyn Error>> {
+        if len <= MAX_BLOCK_SIZE {
+            for class_of_subheap in 0..SUBHEAP_COUNT {
+                if len <= block_size_of_subheap(class_of_subheap) {
+                    return self.alloc_on_subheap(class_of_subheap);
+                }
+            }
+            self.alloc_on_subheap(SUBHEAP_COUNT - 1)
+        } else {
+            self.alloc_on_external(len)
+        }
+    }
+
     pub unsafe fn free<T>(&mut self, ptr: NonNull<T>) -> Result<(), Box<dyn Error>> {
         let allocated_ptr = (ptr.as_ptr() as *mut libc::c_void)
             .offset(- (size_of::<Header>() as isize));
@@ -211,19 +224,6 @@ impl Allocator {
         } else {
             let size = size_or_class_of_subheap;
             self.free_on_external(allocated_ptr, size)
-        }
-    }
-
-    pub unsafe fn alloc_by_size<T>(&mut self, len: usize) -> Result<NonNull<T>, Box<dyn Error>> {
-        if len <= MAX_BLOCK_SIZE {
-            for class_of_subheap in 0..SUBHEAP_COUNT {
-                if len <= block_size_of_subheap(class_of_subheap) {
-                    return self.alloc_on_subheap(class_of_subheap);
-                }
-            }
-            self.alloc_on_subheap(SUBHEAP_COUNT - 1)
-        } else {
-            self.alloc_on_external(len)
         }
     }
 
